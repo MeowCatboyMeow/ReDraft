@@ -525,10 +525,11 @@ function hideInstallDialog() {
 
 function renderCustomRules() {
     const container = document.getElementById('redraft_custom_rules_list');
+    const settings = getSettings();
+    console.debug(`${LOG_PREFIX} renderCustomRules: container found=${!!container}, rules count=${settings.customRules?.length}`);
     if (!container) return;
 
     const { DOMPurify } = SillyTavern.libs;
-    const settings = getSettings();
 
     container.innerHTML = '';
 
@@ -768,10 +769,19 @@ function bindSettingsUI() {
         popoutOpenSettings.addEventListener('click', () => {
             console.log(`${LOG_PREFIX} Full Settings button clicked!`);
             togglePopout();
-            // Open the extensions panel
-            const extBtn = document.getElementById('extensionsMenuButton');
-            console.debug(`${LOG_PREFIX} extensionsMenuButton found:`, !!extBtn);
-            if (extBtn) extBtn.click();
+
+            // Check if extensions panel is already visible
+            const extPanel = document.getElementById('top-settings-holder');
+            const isPanelOpen = extPanel && extPanel.style.display !== 'none' && !extPanel.classList.contains('displayNone');
+            console.debug(`${LOG_PREFIX} Extensions panel open:`, isPanelOpen);
+
+            if (!isPanelOpen) {
+                // Only click if panel is closed
+                const extBtn = document.getElementById('extensionsMenuButton');
+                console.debug(`${LOG_PREFIX} extensionsMenuButton found:`, !!extBtn);
+                if (extBtn) extBtn.click();
+            }
+
             // Scroll to and open the ReDraft drawer
             setTimeout(() => {
                 const redraftSettings = document.getElementById('redraft_settings');
@@ -779,10 +789,10 @@ function bindSettingsUI() {
                 if (redraftSettings) {
                     redraftSettings.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     // Open the drawer if it's closed
-                    const drawerToggle = redraftSettings.querySelector('.inline-drawer-toggle');
                     const drawerContent = redraftSettings.querySelector('.inline-drawer-content');
-                    if (drawerToggle && drawerContent && drawerContent.style.display === 'none') {
-                        drawerToggle.click();
+                    if (drawerContent && !drawerContent.classList.contains('open') && getComputedStyle(drawerContent).display === 'none') {
+                        const drawerToggle = redraftSettings.querySelector('.inline-drawer-toggle');
+                        if (drawerToggle) drawerToggle.click();
                     }
                 }
             }, 300);
