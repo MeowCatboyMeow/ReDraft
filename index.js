@@ -617,6 +617,7 @@ function initDragReorder(container, settings) {
 
 function bindSettingsUI() {
     const settings = getSettings();
+    console.debug(`${LOG_PREFIX} bindSettingsUI() called, customRules:`, settings.customRules);
 
     // Connection mode selector
     const modeSelect = document.getElementById('redraft_connection_mode');
@@ -681,14 +682,18 @@ function bindSettingsUI() {
 
     // Add custom rule button
     const addRuleBtn = document.getElementById('redraft_add_rule');
+    console.debug(`${LOG_PREFIX} addRuleBtn found:`, !!addRuleBtn);
     if (addRuleBtn) {
-        addRuleBtn.addEventListener('click', () => {
+        addRuleBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            console.log(`${LOG_PREFIX} Add rule button clicked! Current rules:`, settings.customRules.length);
             settings.customRules.push({ text: '', enabled: true });
             saveSettings();
             renderCustomRules();
 
             // Auto-focus the new rule's text input
             const ruleInputs = document.querySelectorAll('.redraft-rule-text');
+            console.debug(`${LOG_PREFIX} Rule inputs after render:`, ruleInputs.length);
             if (ruleInputs.length > 0) {
                 ruleInputs[ruleInputs.length - 1].focus();
             }
@@ -758,14 +763,19 @@ function bindSettingsUI() {
     }
 
     const popoutOpenSettings = document.getElementById('redraft_popout_open_settings');
+    console.debug(`${LOG_PREFIX} popoutOpenSettings found:`, !!popoutOpenSettings);
     if (popoutOpenSettings) {
         popoutOpenSettings.addEventListener('click', () => {
+            console.log(`${LOG_PREFIX} Full Settings button clicked!`);
             togglePopout();
             // Open the extensions panel
-            document.getElementById('extensionsMenuButton')?.click();
+            const extBtn = document.getElementById('extensionsMenuButton');
+            console.debug(`${LOG_PREFIX} extensionsMenuButton found:`, !!extBtn);
+            if (extBtn) extBtn.click();
             // Scroll to and open the ReDraft drawer
             setTimeout(() => {
                 const redraftSettings = document.getElementById('redraft_settings');
+                console.debug(`${LOG_PREFIX} redraft_settings found:`, !!redraftSettings);
                 if (redraftSettings) {
                     redraftSettings.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     // Open the drawer if it's closed
