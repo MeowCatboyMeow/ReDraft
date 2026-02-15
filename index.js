@@ -10,7 +10,6 @@
 const MODULE_NAME = 'redraft';
 const PLUGIN_BASE = '/api/plugins/redraft';
 const LOG_PREFIX = '[ReDraft]';
-const EXTENSION_BASE_URL = new URL('.', import.meta.url).toString();
 
 // ─── Default Settings ───────────────────────────────────────────────
 
@@ -886,34 +885,216 @@ function registerSlashCommand() {
     const context = SillyTavern.getContext();
     const { eventSource, event_types } = context;
 
-    // Load settings HTML
-    // Derive extension path from our own script tag (ST sets the src correctly)
-    const ownScript = document.querySelector('script[src*="redraft" i][src$="index.js"]');
-    const basePath = ownScript
-        ? ownScript.src.substring(0, ownScript.src.lastIndexOf('/') + 1)
-        : EXTENSION_BASE_URL;
-    console.debug(`${LOG_PREFIX} Resolved base path: ${basePath}`);
+    // Load settings HTML (inlined to avoid path resolution issues with third-party extensions)
+    const settingsHtml = `
+<div id="redraft_settings">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>ReDraft</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content">
 
-    try {
-        const settingsHtml = await fetch(`${basePath}settings.html`);
-        if (settingsHtml.ok) {
-            const html = await settingsHtml.text();
-            const container = document.getElementById('extensions_settings2');
-            if (container) {
-                container.insertAdjacentHTML('beforeend', html);
+            <!-- Server Plugin Install Banner (shown only when plugin unavailable) -->
+            <div id="redraft_plugin_banner" class="redraft-plugin-banner" style="display: none;">
+                <div class="redraft-banner-text">
+                    <i class="fa-solid fa-info-circle"></i>
+                    <span>Using ST's built-in API. For a separate refinement LLM, install the server plugin.</span>
+                </div>
+                <div id="redraft_install_btn" class="menu_button" title="Show install command">
+                    <i class="fa-solid fa-download"></i>
+                    <span>Install Server Plugin</span>
+                </div>
+            </div>
 
-                // Move popout panel and install dialog to body for proper positioning
-                const popout = document.getElementById('redraft_popout_panel');
-                if (popout) document.body.appendChild(popout);
+            <!-- Connection Section -->
+            <div class="inline-drawer">
+                <div class="inline-drawer-toggle inline-drawer-header">
+                    <span>Connection</span>
+                    <span id="redraft_status_dot" class="redraft-status-dot" title="Not configured"></span>
+                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                </div>
+                <div class="inline-drawer-content">
+                    <div class="redraft-form-group">
+                        <label for="redraft_connection_mode">Refinement Mode</label>
+                        <select id="redraft_connection_mode">
+                            <option value="st">Use current ST connection</option>
+                            <option value="plugin">Use separate LLM (server plugin)</option>
+                        </select>
+                    </div>
 
-                const installDialog = document.getElementById('redraft_install_dialog');
-                if (installDialog) document.body.appendChild(installDialog);
-            }
-        } else {
-            console.error(`${LOG_PREFIX} Settings HTML not found (${settingsHtml.status}) at: ${basePath}settings.html`);
-        }
-    } catch (err) {
-        console.error(`${LOG_PREFIX} Failed to load settings HTML:`, err);
+                    <!-- Plugin connection fields (shown only in plugin mode) -->
+                    <div id="redraft_plugin_fields" style="display: none;">
+                        <div class="redraft-form-group">
+                            <label for="redraft_api_url">API URL</label>
+                            <input id="redraft_api_url" type="text" class="text_pole"
+                                placeholder="https://api.openai.com/v1" />
+                        </div>
+                        <div class="redraft-form-group">
+                            <label for="redraft_api_key">API Key</label>
+                            <input id="redraft_api_key" type="password" class="text_pole" placeholder="sk-..."
+                                autocomplete="off" />
+                        </div>
+                        <div class="redraft-form-group">
+                            <label for="redraft_model">Model</label>
+                            <input id="redraft_model" type="text" class="text_pole" placeholder="gpt-4o-mini" />
+                        </div>
+                        <div class="redraft-form-group">
+                            <label for="redraft_max_tokens">Max Tokens</label>
+                            <input id="redraft_max_tokens" type="number" class="text_pole" placeholder="4096" min="1"
+                                max="128000" />
+                        </div>
+                        <div class="redraft-button-row">
+                            <div id="redraft_save_connection" class="menu_button">
+                                <i class="fa-solid fa-save"></i>
+                                <span>Save Connection</span>
+                            </div>
+                            <span id="redraft_connection_info" class="redraft-connection-info"></span>
+                        </div>
+                    </div>
+
+                    <!-- ST mode info -->
+                    <div id="redraft_st_mode_info" class="redraft-st-mode-info">
+                        <small>Refinement will use your currently selected API and model in SillyTavern.</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Rules Section -->
+            <div class="inline-drawer">
+                <div class="inline-drawer-toggle inline-drawer-header">
+                    <span>Rules</span>
+                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                </div>
+                <div class="inline-drawer-content">
+                    <small class="redraft-section-hint">Active rules are sent to the refinement LLM along with the
+                        message.</small>
+
+                    <div class="redraft-rules-builtins">
+                        <label class="checkbox_label">
+                            <input type="checkbox" id="redraft_rule_grammar" />
+                            <span>Fix grammar and spelling</span>
+                        </label>
+                        <label class="checkbox_label">
+                            <input type="checkbox" id="redraft_rule_repetition" />
+                            <span>Remove repetition and redundant phrases</span>
+                        </label>
+                        <label class="checkbox_label">
+                            <input type="checkbox" id="redraft_rule_voice" />
+                            <span>Maintain character voice and personality</span>
+                        </label>
+                        <label class="checkbox_label">
+                            <input type="checkbox" id="redraft_rule_prose" />
+                            <span>Improve prose quality and flow</span>
+                        </label>
+                        <label class="checkbox_label">
+                            <input type="checkbox" id="redraft_rule_formatting" />
+                            <span>Fix formatting and punctuation</span>
+                        </label>
+                        <label class="checkbox_label">
+                            <input type="checkbox" id="redraft_rule_lore" />
+                            <span>Ensure consistency with established lore</span>
+                        </label>
+                    </div>
+
+                    <hr />
+
+                    <div class="redraft-custom-rules-header">
+                        <small>Custom Rules (ordered by priority)</small>
+                        <div id="redraft_add_rule" class="menu_button" title="Add custom rule">
+                            <i class="fa-solid fa-plus"></i>
+                        </div>
+                    </div>
+
+                    <div id="redraft_custom_rules_list" class="redraft-custom-rules-list">
+                        <!-- Custom rules injected here by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Advanced Section -->
+            <div class="inline-drawer">
+                <div class="inline-drawer-toggle inline-drawer-header">
+                    <span>Advanced</span>
+                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                </div>
+                <div class="inline-drawer-content">
+                    <label class="checkbox_label">
+                        <input type="checkbox" id="redraft_enabled" />
+                        <span>Enable ReDraft</span>
+                    </label>
+                    <label class="checkbox_label">
+                        <input type="checkbox" id="redraft_auto_refine" />
+                        <span>Auto-refine new AI messages</span>
+                    </label>
+                    <div class="redraft-form-group">
+                        <label for="redraft_system_prompt">System Prompt Override</label>
+                        <textarea id="redraft_system_prompt" class="text_pole textarea_compact" rows="4"
+                            placeholder="Leave blank for default refinement prompt..."></textarea>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- Floating Popout Panel (injected near bottom of body by JS) -->
+<div id="redraft_popout_panel" class="redraft-popout-panel" style="display: none;">
+    <div class="redraft-popout-header">
+        <span class="redraft-popout-title">ReDraft</span>
+        <div id="redraft_popout_close" class="dragClose" title="Close">
+            <i class="fa-solid fa-xmark"></i>
+        </div>
+    </div>
+    <div class="redraft-popout-body">
+        <label class="checkbox_label">
+            <input type="checkbox" id="redraft_popout_auto" />
+            <span>Auto-refine</span>
+        </label>
+        <div id="redraft_popout_status" class="redraft-popout-status"></div>
+        <div id="redraft_popout_refine" class="menu_button">
+            <i class="fa-solid fa-pen-nib"></i>
+            <span>Refine Last Message</span>
+        </div>
+        <div id="redraft_popout_open_settings" class="menu_button">
+            <i class="fa-solid fa-gear"></i>
+            <span>Full Settings</span>
+        </div>
+    </div>
+</div>
+
+<!-- Install Command Dialog (hidden, shown by JS) -->
+<div id="redraft_install_dialog" class="redraft-install-dialog" style="display: none;">
+    <div class="redraft-install-dialog-content">
+        <div class="redraft-install-dialog-header">
+            <span>Install ReDraft Server Plugin</span>
+            <div id="redraft_install_dialog_close" class="dragClose" title="Close">
+                <i class="fa-solid fa-xmark"></i>
+            </div>
+        </div>
+        <p>Run this command in your SillyTavern root directory, then restart:</p>
+        <div class="redraft-install-command-block">
+            <code id="redraft_install_command"></code>
+            <div id="redraft_copy_command" class="menu_button" title="Copy to clipboard">
+                <i class="fa-solid fa-copy"></i>
+            </div>
+        </div>
+        <small class="redraft-install-hint">This copies the plugin files and enables server plugins in your
+            config.</small>
+    </div>
+</div>`;
+
+    const container = document.getElementById('extensions_settings2');
+    if (container) {
+        container.insertAdjacentHTML('beforeend', settingsHtml);
+
+        // Move popout panel and install dialog to body for proper positioning
+        const popout = document.getElementById('redraft_popout_panel');
+        if (popout) document.body.appendChild(popout);
+
+        const installDialog = document.getElementById('redraft_install_dialog');
+        if (installDialog) document.body.appendChild(installDialog);
     }
 
     // Initialize settings and bind UI
