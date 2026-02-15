@@ -10,6 +10,7 @@
 const MODULE_NAME = 'redraft';
 const PLUGIN_BASE = '/api/plugins/redraft';
 const LOG_PREFIX = '[ReDraft]';
+const EXTENSION_BASE_URL = new URL('.', import.meta.url).toString();
 
 // ─── Default Settings ───────────────────────────────────────────────
 
@@ -210,8 +211,7 @@ async function refineViaST(promptText, systemPrompt) {
         throw new Error('generateRaw is not available in this version of SillyTavern');
     }
 
-    const fullPrompt = `${systemPrompt}\n\n${promptText}`;
-    const result = await generateRaw(fullPrompt, null, false, false, fullPrompt);
+    const result = await generateRaw({ prompt: promptText, systemPrompt: systemPrompt });
 
     if (!result || typeof result !== 'string' || !result.trim()) {
         throw new Error('ST generated an empty response');
@@ -888,7 +888,7 @@ function registerSlashCommand() {
 
     // Load settings HTML
     try {
-        const settingsHtml = await fetch('/scripts/extensions/third-party/redraft/settings.html');
+        const settingsHtml = await fetch(`${EXTENSION_BASE_URL}settings.html`);
         if (settingsHtml.ok) {
             const html = await settingsHtml.text();
             const container = document.getElementById('extensions_settings2');
