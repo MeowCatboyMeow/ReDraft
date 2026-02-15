@@ -1,0 +1,5 @@
+# ReDraft Extension
+node_modules/
+config.json
+*.log
+.DS_Store
