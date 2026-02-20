@@ -176,24 +176,43 @@ function compileRules(settings) {
 }
 
 /**
- * Strip <details> blocks from text, replacing with placeholders.
- * Returns { stripped, blocks } where blocks is the array of original HTML.
+ * Strip structured content from text, replacing with placeholders.
+ * Protects code fences, HTML/XML tags, and bracket-delimited blocks
+ * from being mangled by the refinement LLM.
+ * Returns { stripped, blocks } where blocks is the array of original content.
  */
-function stripDetailsBlocks(text) {
+function stripProtectedBlocks(text) {
     const blocks = [];
-    const stripped = text.replace(/<details[\s\S]*?<\/details>/gi, (match) => {
-        const idx = blocks.length;
+    let result = text;
+
+    // 1. Code fences: ```...``` (with or without language tag)
+    result = result.replace(/```[\s\S]*?```/g, (match) => {
         blocks.push(match);
-        return `[DETAILS_BLOCK_${idx}]`;
+        return `[PROTECTED_${blocks.length - 1}]`;
     });
-    return { stripped, blocks };
+
+    // 2. HTML/XML block elements: <tag ...>...</tag>
+    result = result.replace(/<(\w[\w-]*)\b[^>]*>[\s\S]*?<\/\1>/gi, (match) => {
+        blocks.push(match);
+        return `[PROTECTED_${blocks.length - 1}]`;
+    });
+
+    // 3. Bracket-delimited blocks: [TAG]...[/TAG]
+    result = result.replace(/\[([A-Z_]+)\][\s\S]*?\[\/\1\]/gi, (match, tag) => {
+        // Don't strip our own CHANGELOG or PROTECTED tags
+        if (tag.toUpperCase() === 'CHANGELOG' || tag.toUpperCase().startsWith('PROTECTED')) return match;
+        blocks.push(match);
+        return `[PROTECTED_${blocks.length - 1}]`;
+    });
+
+    return { stripped: result, blocks };
 }
 
 /**
- * Restore <details> blocks from placeholders.
+ * Restore protected blocks from placeholders.
  */
-function restoreDetailsBlocks(text, blocks) {
-    return text.replace(/\[DETAILS_BLOCK_(\d+)\]/g, (_, idx) => {
+function restoreProtectedBlocks(text, blocks) {
+    return text.replace(/\[PROTECTED_(\d+)\]/g, (_, idx) => {
         return blocks[parseInt(idx, 10)] || '';
     });
 }
@@ -438,8 +457,8 @@ async function redraftMessage(messageIndex) {
         chatMetadata['redraft_originals'][messageIndex] = message.mes;
         await saveMetadata();
 
-        // Strip <details> blocks before sending to LLM
-        const { stripped: strippedMessage, blocks: detailsBlocks } = stripDetailsBlocks(message.mes);
+        // Strip structured content (code fences, HTML, bracket blocks) before sending to LLM
+        const { stripped: strippedMessage, blocks: protectedBlocks } = stripProtectedBlocks(message.mes);
 
         // Build the refinement prompt
         const rulesText = compileRules(settings);
@@ -490,7 +509,7 @@ async function redraftMessage(messageIndex) {
             ? `Context:\n${contextParts.join('\n\n')}\n\n`
             : '';
 
-        const promptText = `${contextBlock}Apply the following refinement rules to the message below. Any [DETAILS_BLOCK_N] placeholders are protected regions \u2014 output them exactly as-is.
+        const promptText = `${contextBlock}Apply the following refinement rules to the message below. Any [PROTECTED_N] placeholders are protected regions — output them exactly as-is.
 
 Remember: output [CHANGELOG]...[/CHANGELOG] first, then the refined message.
 
@@ -514,8 +533,8 @@ Rules:\n${rulesText}\n\nOriginal message:\n${strippedMessage}`;
             console.log(`${LOG_PREFIX} [changelog]`, changelog);
         }
 
-        // Restore <details> blocks and write refined text back
-        refinedText = restoreDetailsBlocks(cleanRefined, detailsBlocks);
+        // Restore protected blocks and write refined text back
+        refinedText = restoreProtectedBlocks(cleanRefined, protectedBlocks);
         const originalText = message.mes;
         message.mes = refinedText;
         await saveChat();
