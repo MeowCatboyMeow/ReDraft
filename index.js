@@ -10,7 +10,7 @@
 const MODULE_NAME = 'redraft';
 const PLUGIN_BASE = '/api/plugins/redraft';
 const LOG_PREFIX = '[ReDraft]';
-console.warn('[ReDraft] *** FILE VERSION CHECK — If you see this, the latest index.js is loaded ***');
+
 
 // ─── Default Settings ───────────────────────────────────────────────
 
@@ -148,9 +148,9 @@ function compileRules(settings) {
     for (const [key, rule] of Object.entries(BUILTIN_RULES)) {
         if (settings.builtInRules[key]) {
             rules.push(rule.prompt);
-            console.log(`${LOG_PREFIX} [rules] Built-in ON: ${key}`);
+            console.debug(`${LOG_PREFIX} [rules] Built-in ON: ${key}`);
         } else {
-            console.log(`${LOG_PREFIX} [rules] Built-in OFF: ${key}`);
+            console.debug(`${LOG_PREFIX} [rules] Built-in OFF: ${key}`);
         }
     }
 
@@ -159,19 +159,19 @@ function compileRules(settings) {
         const rule = settings.customRules[i];
         if (rule.enabled && rule.text && rule.text.trim()) {
             rules.push(rule.text.trim());
-            console.log(`${LOG_PREFIX} [rules] Custom #${i} ON: "${rule.text.trim().substring(0, 80)}${rule.text.trim().length > 80 ? '…' : ''}"`);
+            console.debug(`${LOG_PREFIX} [rules] Custom #${i} ON: "${rule.text.trim().substring(0, 80)}${rule.text.trim().length > 80 ? '…' : ''}"`);
         } else {
-            console.log(`${LOG_PREFIX} [rules] Custom #${i} SKIPPED (enabled=${rule.enabled}, text=${JSON.stringify(rule.text?.substring?.(0, 40) || rule.text)})`);
+            console.debug(`${LOG_PREFIX} [rules] Custom #${i} SKIPPED (enabled=${rule.enabled}, text=${JSON.stringify(rule.text?.substring?.(0, 40) || rule.text)})`);
         }
     }
 
     if (rules.length === 0) {
         rules.push('Improve the overall quality of the message');
-        console.log(`${LOG_PREFIX} [rules] No active rules — using fallback`);
+        console.debug(`${LOG_PREFIX} [rules] No active rules — using fallback`);
     }
 
     const compiled = rules.map((r, i) => `${i + 1}. ${r}`).join('\n');
-    console.log(`${LOG_PREFIX} [rules] Compiled ${rules.length} rules total`);
+    console.debug(`${LOG_PREFIX} [rules] Compiled ${rules.length} rules total`);
     return compiled;
 }
 
@@ -475,9 +475,9 @@ Remember: output [CHANGELOG]...[/CHANGELOG] first, then the refined message.
 
 Rules:\n${rulesText}\n\nOriginal message:\n${strippedMessage}`;
 
-        console.log(`${LOG_PREFIX} [prompt] System prompt (${systemPrompt.length} chars):`, systemPrompt.substring(0, 200) + '…');
-        console.log(`${LOG_PREFIX} [prompt] Full refinement prompt (${promptText.length} chars):`);
-        console.log(promptText);
+        console.debug(`${LOG_PREFIX} [prompt] System prompt (${systemPrompt.length} chars):`, systemPrompt.substring(0, 200) + '…');
+        console.debug(`${LOG_PREFIX} [prompt] Full refinement prompt (${promptText.length} chars):`);
+        console.debug(promptText);
 
         // Call refinement via the appropriate mode
         let refinedText;
@@ -864,33 +864,6 @@ async function updatePopoutStatus() {
     }
 }
 
-// ─── Install Dialog ─────────────────────────────────────────────────
-
-function getInstallCommand() {
-    // Detect the extension install path to construct the command
-    const isWindows = navigator.platform.indexOf('Win') > -1;
-    const basePath = 'node data/default-user/extensions/third-party/redraft/server-plugin/install.js';
-
-    if (isWindows) {
-        return basePath.replace(/\//g, '\\');
-    }
-    return basePath;
-}
-
-function showInstallDialog() {
-    const dialog = document.getElementById('redraft_install_dialog');
-    const commandEl = document.getElementById('redraft_install_command');
-    if (!dialog || !commandEl) return;
-
-    commandEl.textContent = getInstallCommand();
-    dialog.style.display = '';
-}
-
-function hideInstallDialog() {
-    const dialog = document.getElementById('redraft_install_dialog');
-    if (dialog) dialog.style.display = 'none';
-}
-
 // ─── Custom Rules UI ────────────────────────────────────────────────
 
 function renderCustomRules() {
@@ -1083,7 +1056,7 @@ function bindSettingsUI() {
     // IMPORTANT: Always use getSettings() fresh in each handler — ST may replace
     // the extension_settings object during save/load, making cached refs stale.
     const initSettings = getSettings();
-    console.debug(`${LOG_PREFIX} bindSettingsUI() called, customRules:`, initSettings.customRules);
+
 
     // Connection mode selector
     const modeSelect = document.getElementById('redraft_connection_mode');
@@ -1192,57 +1165,25 @@ function bindSettingsUI() {
 
     // Add custom rule button
     const addRuleBtn = document.getElementById('redraft_add_rule');
-    console.debug(`${LOG_PREFIX} addRuleBtn found:`, !!addRuleBtn);
+
     if (addRuleBtn) {
         addRuleBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             const s = getSettings();
-            console.log(`${LOG_PREFIX} Add rule button clicked! Current rules:`, s.customRules.length);
             s.customRules.push({ text: '', enabled: true });
             saveSettings();
             renderCustomRules();
 
             // Auto-focus the new rule's text input
             const ruleInputs = document.querySelectorAll('.redraft-rule-text');
-            console.debug(`${LOG_PREFIX} Rule inputs after render:`, ruleInputs.length);
+
             if (ruleInputs.length > 0) {
                 ruleInputs[ruleInputs.length - 1].focus();
             }
         });
     }
 
-    // Install banner button
-    const installBtn = document.getElementById('redraft_install_btn');
-    if (installBtn) {
-        installBtn.addEventListener('click', showInstallDialog);
-    }
 
-    // Install dialog close
-    const installDialogClose = document.getElementById('redraft_install_dialog_close');
-    if (installDialogClose) {
-        installDialogClose.addEventListener('click', hideInstallDialog);
-    }
-
-    // Copy command button
-    const copyBtn = document.getElementById('redraft_copy_command');
-    if (copyBtn) {
-        copyBtn.addEventListener('click', () => {
-            const command = getInstallCommand();
-            navigator.clipboard.writeText(command).then(() => {
-                toastr.success('Command copied to clipboard', 'ReDraft');
-            }).catch(() => {
-                toastr.warning('Could not copy — please select and copy manually', 'ReDraft');
-            });
-        });
-    }
-
-    // Click outside install dialog to close
-    const installDialog = document.getElementById('redraft_install_dialog');
-    if (installDialog) {
-        installDialog.addEventListener('click', (e) => {
-            if (e.target === installDialog) hideInstallDialog();
-        });
-    }
 
     // Popout panel bindings
     const popoutClose = document.getElementById('redraft_popout_close');
@@ -1289,28 +1230,28 @@ function bindSettingsUI() {
     }
 
     const popoutOpenSettings = document.getElementById('redraft_popout_open_settings');
-    console.debug(`${LOG_PREFIX} popoutOpenSettings found:`, !!popoutOpenSettings);
+
     if (popoutOpenSettings) {
         popoutOpenSettings.addEventListener('click', () => {
-            console.log(`${LOG_PREFIX} Full Settings button clicked!`);
+
             togglePopout();
 
             // Check if extensions panel is already visible
             const extPanel = document.getElementById('top-settings-holder');
             const isPanelOpen = extPanel && extPanel.style.display !== 'none' && !extPanel.classList.contains('displayNone');
-            console.debug(`${LOG_PREFIX} Extensions panel open:`, isPanelOpen);
+
 
             if (!isPanelOpen) {
                 // Only click if panel is closed
                 const extBtn = document.getElementById('extensionsMenuButton');
-                console.debug(`${LOG_PREFIX} extensionsMenuButton found:`, !!extBtn);
+
                 if (extBtn) extBtn.click();
             }
 
             // Scroll to and open the ReDraft drawer
             setTimeout(() => {
                 const redraftSettings = document.getElementById('redraft_settings');
-                console.debug(`${LOG_PREFIX} redraft_settings found:`, !!redraftSettings);
+
                 if (redraftSettings) {
                     redraftSettings.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     // Open the drawer if it's closed
@@ -1472,17 +1413,6 @@ function registerSlashCommand() {
         </div>
         <div class="inline-drawer-content">
 
-            <!-- Server Plugin Install Banner (shown only when plugin unavailable) -->
-            <div id="redraft_plugin_banner" class="redraft-plugin-banner" style="display: none;">
-                <div class="redraft-banner-text">
-                    <i class="fa-solid fa-info-circle"></i>
-                    <span>Using ST's built-in API. For a separate refinement LLM, install the server plugin.</span>
-                </div>
-                <div id="redraft_install_btn" class="menu_button" title="Show install command">
-                    <i class="fa-solid fa-download"></i>
-                    <span>Install Server Plugin</span>
-                </div>
-            </div>
 
             <!-- Connection Section -->
             <div class="inline-drawer">
@@ -1495,7 +1425,7 @@ function registerSlashCommand() {
                         <label for="redraft_connection_mode">Refinement Mode</label>
                         <select id="redraft_connection_mode">
                             <option value="st">Use current ST connection</option>
-                            <option value="plugin">Use separate LLM (server plugin)</option>
+                            <option value="plugin" disabled>Separate LLM (Coming Soon)</option>
                         </select>
                     </div>
 
@@ -1682,39 +1612,15 @@ function registerSlashCommand() {
             <span>Full Settings</span>
         </div>
     </div>
-</div>
-
-<!-- Install Command Dialog (hidden, shown by JS) -->
-<div id="redraft_install_dialog" class="redraft-install-dialog" style="display: none;">
-    <div class="redraft-install-dialog-content">
-        <div class="redraft-install-dialog-header">
-            <span>Install ReDraft Server Plugin</span>
-            <div id="redraft_install_dialog_close" class="dragClose" title="Close">
-                <i class="fa-solid fa-xmark"></i>
-            </div>
-        </div>
-        <p>Run this command in your SillyTavern root directory, then restart:</p>
-        <div class="redraft-install-command-block">
-            <code id="redraft_install_command"></code>
-            <div id="redraft_copy_command" class="menu_button" title="Copy to clipboard">
-                <i class="fa-solid fa-copy"></i>
-            </div>
-        </div>
-        <small class="redraft-install-hint">This copies the plugin files and enables server plugins in your
-            config.</small>
-    </div>
 </div>`;
 
     const container = document.getElementById('extensions_settings2');
     if (container) {
         container.insertAdjacentHTML('beforeend', settingsHtml);
 
-        // Move popout panel and install dialog to body for proper positioning
+        // Move popout panel to body for proper positioning
         const popout = document.getElementById('redraft_popout_panel');
         if (popout) document.body.appendChild(popout);
-
-        const installDialog = document.getElementById('redraft_install_dialog');
-        if (installDialog) document.body.appendChild(installDialog);
     }
 
     // Initialize settings and bind UI

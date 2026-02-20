@@ -6,8 +6,8 @@
     "dependencies": [],
     "js": "index.js",
     "css": "style.css",
-    "author": "ReDraft",
+    "author": "Avolix",
     "version": "1.0.0",
-    "homePage": "",
+    "homePage": "https://github.com/Avolix/ReDraft",
     "auto_update": true
 }
