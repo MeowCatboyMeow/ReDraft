@@ -479,3 +479,52 @@
     border-radius: 2px;
     padding: 1px 2px;
 }
+
+/* Changelog section in diff popup */
+.redraft-changelog {
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+    padding: 10px 16px;
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.redraft-changelog-summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: calc(var(--mainFontSize) * 0.9);
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.8;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    user-select: none;
+    list-style: none;
+}
+
+.redraft-changelog-summary::-webkit-details-marker {
+    display: none;
+}
+
+.redraft-changelog-summary::after {
+    content: '\25BC';
+    font-size: 0.65em;
+    margin-left: auto;
+    opacity: 0.5;
+    transition: transform 150ms ease;
+}
+
+.redraft-changelog:not([open]) .redraft-changelog-summary::after {
+    transform: rotate(-90deg);
+}
+
+.redraft-changelog-summary:hover {
+    opacity: 1;
+}
+
+.redraft-changelog-body {
+    margin-top: 8px;
+    font-size: calc(var(--mainFontSize) * 0.88);
+    line-height: 1.6;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.85;
+    padding-left: 4px;
+}

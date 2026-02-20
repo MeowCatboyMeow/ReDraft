@@ -189,6 +189,19 @@ function restoreDetailsBlocks(text, blocks) {
 }
 
 /**
+ * Parse a [CHANGELOG] block from the LLM response.
+ * Returns { changelog, refined } where changelog is the extracted text (or null)
+ * and refined is the message with the changelog block removed.
+ */
+function parseChangelog(responseText) {
+    const match = responseText.match(/\[CHANGELOG\]\s*([\s\S]*?)\s*\[\/CHANGELOG\]/i);
+    if (!match) return { changelog: null, refined: responseText.trim() };
+    const changelog = match[1].trim();
+    const refined = responseText.replace(/\[CHANGELOG\][\s\S]*?\[\/CHANGELOG\]/i, '').trim();
+    return { changelog, refined };
+}
+
+/**
  * Detect the PoV of a text by checking pronoun frequency.
  * Returns '1st' | '1.5' | '2nd' | '3rd' or null if unclear.
  */
@@ -458,7 +471,19 @@ async function redraftMessage(messageIndex) {
             ? `Context:\n${contextParts.join('\n\n')}\n\n`
             : '';
 
-        const promptText = `${contextBlock}Apply the following refinement rules to the message below. Any [DETAILS_BLOCK_N] placeholders are protected regions \u2014 output them exactly as-is.\n\nRules:\n${rulesText}\n\nOriginal message:\n${strippedMessage}`;
+        const promptText = `${contextBlock}Apply the following refinement rules to the message below. Any [DETAILS_BLOCK_N] placeholders are protected regions \u2014 output them exactly as-is.
+
+Before the refined message, output a brief changelog inside [CHANGELOG]...[/CHANGELOG] tags. For each change you made, note which rule motivated it and what you changed. Be concise \u2014 one line per change. If a rule required no changes, omit it. Example format:
+
+[CHANGELOG]
+- Grammar: Fixed \"their\" \u2192 \"they're\" in paragraph 2
+- Repetition: Replaced 3rd use of \"softly\" with \"gently\"
+- Echo: Removed restated player action in dialogue
+[/CHANGELOG]
+
+Then output the full refined message (with no extra commentary).
+
+Rules:\n${rulesText}\n\nOriginal message:\n${strippedMessage}`;
 
         console.log(`${LOG_PREFIX} [prompt] System prompt (${systemPrompt.length} chars):`, systemPrompt.substring(0, 200) + '…');
         console.log(`${LOG_PREFIX} [prompt] Full refinement prompt (${promptText.length} chars):`);
@@ -472,8 +497,14 @@ async function redraftMessage(messageIndex) {
             refinedText = await refineViaST(promptText, systemPrompt);
         }
 
+        // Parse changelog from response
+        const { changelog, refined: cleanRefined } = parseChangelog(refinedText);
+        if (changelog) {
+            console.log(`${LOG_PREFIX} [changelog]`, changelog);
+        }
+
         // Restore <details> blocks and write refined text back
-        refinedText = restoreDetailsBlocks(refinedText, detailsBlocks);
+        refinedText = restoreDetailsBlocks(cleanRefined, detailsBlocks);
         const originalText = message.mes;
         message.mes = refinedText;
         await saveChat();
@@ -483,11 +514,11 @@ async function redraftMessage(messageIndex) {
 
         // Show undo + diff buttons
         showUndoButton(messageIndex);
-        showDiffButton(messageIndex, originalText, refinedText);
+        showDiffButton(messageIndex, originalText, refinedText, changelog);
 
         // Auto-show diff popup if toggle is on
         if (settings.showDiffAfterRefine) {
-            showDiffPopup(originalText, refinedText);
+            showDiffPopup(originalText, refinedText, changelog);
         }
 
         toastr.success('Message refined', 'ReDraft');
@@ -607,7 +638,7 @@ function hideUndoButton(messageIndex) {
     if (btn) btn.remove();
 }
 
-function showDiffButton(messageIndex, originalText, refinedText) {
+function showDiffButton(messageIndex, originalText, refinedText, changelog = null) {
     const mesEl = document.querySelector(`.mes[mesid="${messageIndex}"]`);
     if (!mesEl) return;
     const buttonsRow = mesEl.querySelector('.mes_buttons');
@@ -617,7 +648,7 @@ function showDiffButton(messageIndex, originalText, refinedText) {
     btn.classList.add('mes_button', 'redraft-diff-btn');
     btn.title = 'View ReDraft Changes';
     btn.innerHTML = '<i class="fa-solid fa-code-compare"></i>';
-    btn.addEventListener('click', () => showDiffPopup(originalText, refinedText));
+    btn.addEventListener('click', () => showDiffPopup(originalText, refinedText, changelog));
 
     const undoBtn = buttonsRow.querySelector('.redraft-undo-btn');
     if (undoBtn) {
@@ -701,7 +732,7 @@ function computeWordDiff(original, refined) {
 /**
  * Show a diff popup comparing original vs refined text.
  */
-function showDiffPopup(original, refined) {
+function showDiffPopup(original, refined, changelog = null) {
     // Remove any existing popup
     closeDiffPopup();
 
@@ -734,6 +765,21 @@ function showDiffPopup(original, refined) {
     const delCount = diff.filter(s => s.type === 'delete').length;
     const insCount = diff.filter(s => s.type === 'insert').length;
 
+    // Build changelog section if available
+    let changelogHtml = '';
+    if (changelog) {
+        const sanitizedLog = DOMPurify.sanitize(changelog, { ALLOWED_TAGS: [] })
+            .replace(/\n/g, '<br>');
+        changelogHtml = `
+            <details class="redraft-changelog" open>
+                <summary class="redraft-changelog-summary">
+                    <i class="fa-solid fa-clipboard-list"></i> Change Log
+                </summary>
+                <div class="redraft-changelog-body">${sanitizedLog}</div>
+            </details>
+        `;
+    }
+
     const overlay = document.createElement('div');
     overlay.id = 'redraft_diff_overlay';
     overlay.classList.add('redraft-diff-overlay');
@@ -749,6 +795,7 @@ function showDiffPopup(original, refined) {
                     <i class="fa-solid fa-xmark"></i>
                 </div>
             </div>
+            ${changelogHtml}
             <div class="redraft-diff-body">${diffHtml}</div>
         </div>
     `;
