@@ -101,14 +101,18 @@ Core principles:
 
 Output format (MANDATORY \u2014 always follow this structure):
 1. First, output a changelog inside [CHANGELOG]...[/CHANGELOG] tags listing each change you made and which rule motivated it. One line per change. If a rule required no changes, omit it.
-2. Then output the full refined message with no other commentary.
+2. Then output the full refined message inside [REFINED]...[/REFINED] tags with no other commentary.
 
 Example:
 [CHANGELOG]
 - Grammar: Fixed \"their\" \u2192 \"they're\" in paragraph 2
 - Repetition: Replaced 3rd use of \"softly\" with \"gently\"
 [/CHANGELOG]
+[REFINED]
 (refined message here)
+[/REFINED]
+
+Do NOT output any analysis, reasoning, or commentary outside the tags. Only output the two tagged blocks.
 
 You will be given the original message, a set of refinement rules to apply, and optionally context about the characters and recent conversation. Apply the rules faithfully.`;
 
@@ -225,28 +229,37 @@ function restoreProtectedBlocks(text, blocks) {
 }
 
 /**
- * Parse a [CHANGELOG] block from the LLM response.
- * Returns { changelog, refined } where changelog is the extracted text (or null)
- * and refined is the message with the changelog block removed.
+ * Parse the LLM response, extracting changelog and refined message.
+ * Returns { changelog, refined }.
  *
- * Key design: only text AFTER the changelog block is treated as the refined
- * message. Any LLM preamble/reasoning before the tags is discarded.
+ * Extraction priority:
+ *   1. [REFINED]...[/REFINED] tags — positive extraction, ignores all reasoning
+ *   2. [CHANGELOG]...[/CHANGELOG] tags — takes text after the block
+ *   3. Fallback — uses entire response as refined text
  */
 function parseChangelog(responseText) {
-    // Try strict match first: [CHANGELOG]...[/CHANGELOG]
+    // Priority 1: Look for [REFINED]...[/REFINED] — most reliable
+    const refinedMatch = responseText.match(/\[REFINED\]\s*([\s\S]*?)\s*\[\/REFINED\]/i);
+    if (refinedMatch) {
+        const refined = refinedMatch[1].trim();
+        // Also extract changelog if present
+        const changelogMatch = responseText.match(/\[CHANGELOG\]\s*([\s\S]*?)\s*\[\/CHANGELOG\]/i);
+        const changelog = changelogMatch ? changelogMatch[1].trim() : null;
+        return { changelog, refined };
+    }
+
+    // Priority 2: [CHANGELOG]...[/CHANGELOG] — take only text after the block
     let match = responseText.match(/\[CHANGELOG\]\s*([\s\S]*?)\s*\[\/CHANGELOG\]/i);
     if (match) {
         const changelog = match[1].trim();
-        // Only keep text AFTER the changelog block — discard any LLM preamble before it
         const afterChangelog = responseText.substring(match.index + match[0].length).trim();
         return { changelog, refined: afterChangelog };
     }
 
-    // Fallback: unclosed [CHANGELOG] tag — split on double-newline to find the message
+    // Priority 3: Unclosed [CHANGELOG] tag — split on double-newline
     match = responseText.match(/\[CHANGELOG\]\s*([\s\S]*?)$/i);
     if (match) {
         const remainder = match[1];
-        // Look for a double-newline gap separating changelog from refined text
         const splitIdx = remainder.search(/\n\s*\n/);
         if (splitIdx !== -1) {
             const changelog = remainder.substring(0, splitIdx).trim();
@@ -518,7 +531,7 @@ async function redraftMessage(messageIndex) {
 
         const promptText = `${contextBlock}Apply the following refinement rules to the message below. Any [PROTECTED_N] placeholders are protected regions — output them exactly as-is.
 
-Remember: output [CHANGELOG]...[/CHANGELOG] first, then the refined message.
+Remember: output [CHANGELOG]...[/CHANGELOG] first, then the refined message inside [REFINED]...[/REFINED]. No other text outside these tags.
 
 Rules:\n${rulesText}\n\nOriginal message:\n${strippedMessage}`;
 
