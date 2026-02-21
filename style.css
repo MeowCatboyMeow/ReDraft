@@ -56,6 +56,23 @@
     font-family: var(--mainFontFamily);
     font-size: var(--mainFontSize);
     color: var(--SmartThemeBodyColor);
+    animation: redraft-popout-in 200ms ease;
+}
+
+@keyframes redraft-popout-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.97);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.redraft-popout-trigger.redraft-refining {
+    opacity: 1;
 }
 
 .redraft-popout-header {
@@ -312,6 +329,11 @@
     align-items: flex-start;
     gap: 6px;
     padding: 3px 0;
+    transition: border-color 150ms ease;
+}
+
+.redraft-custom-rule-item.redraft-drag-over {
+    border-top: 2px solid var(--SmartThemeBodyColor);
 }
 
 .redraft-custom-rule-item .drag-handle {
@@ -356,25 +378,16 @@
     opacity: 0.9;
 }
 
-/* Per-message refine button — inherits .mes_button */
-.mes_button.redraft-msg-btn {
-    /* No custom styles needed — .mes_button handles everything */
-}
+/* Per-message refine button — inherits .mes_button, no custom styles needed */
 
 .mes_button.redraft-msg-btn.redraft-loading {
     pointer-events: none;
     opacity: 0.5;
 }
 
-/* Undo button */
-.mes_button.redraft-undo-btn {
-    /* Inherits .mes_button */
-}
+/* Undo button — inherits .mes_button */
 
-/* Diff button */
-.mes_button.redraft-diff-btn {
-    /* Inherits .mes_button */
-}
+/* Diff button — inherits .mes_button */
 
 /* ─── Diff Popup ─────────────────────────────────────────────────── */
 
@@ -441,14 +454,43 @@
     font-family: monospace;
 }
 
+/* GitHub-style inline diff highlighting — theme-aware */
+:root {
+    --redraft-del-color: #f85149;
+    --redraft-ins-color: #3fb950;
+}
+
+@media (prefers-color-scheme: light) {
+    :root {
+        --redraft-del-color: #cf222e;
+        --redraft-ins-color: #1a7f37;
+    }
+}
+
+.redraft-diff-del {
+    background: color-mix(in srgb, var(--redraft-del-color) 15%, transparent);
+    color: var(--redraft-del-color);
+    text-decoration: line-through;
+    text-decoration-color: color-mix(in srgb, var(--redraft-del-color) 50%, transparent);
+    border-radius: 2px;
+    padding: 1px 2px;
+}
+
+.redraft-diff-ins {
+    background: color-mix(in srgb, var(--redraft-ins-color) 15%, transparent);
+    color: var(--redraft-ins-color);
+    border-radius: 2px;
+    padding: 1px 2px;
+}
+
 .redraft-diff-stat-del {
-    background: rgba(248, 81, 73, 0.2);
-    color: #f85149;
+    background: color-mix(in srgb, var(--redraft-del-color) 20%, transparent);
+    color: var(--redraft-del-color);
 }
 
 .redraft-diff-stat-ins {
-    background: rgba(63, 185, 80, 0.2);
-    color: #3fb950;
+    background: color-mix(in srgb, var(--redraft-ins-color) 20%, transparent);
+    color: var(--redraft-ins-color);
 }
 
 .redraft-diff-close {
@@ -474,23 +516,6 @@
     word-wrap: break-word;
     flex: 1;
     min-height: 0;
-}
-
-/* GitHub-style inline diff highlighting */
-.redraft-diff-del {
-    background: rgba(248, 81, 73, 0.15);
-    color: #f85149;
-    text-decoration: line-through;
-    text-decoration-color: rgba(248, 81, 73, 0.5);
-    border-radius: 2px;
-    padding: 1px 2px;
-}
-
-.redraft-diff-ins {
-    background: rgba(63, 185, 80, 0.15);
-    color: #3fb950;
-    border-radius: 2px;
-    padding: 1px 2px;
 }
 
 /* Changelog section in diff popup */

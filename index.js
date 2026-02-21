@@ -122,6 +122,18 @@ let isRefining = false; // Re-entrancy guard
 let pluginAvailable = false; // Whether server plugin is reachable
 let eventListenerRefs = {}; // For cleanup
 
+// Global keydown handler for ESC
+function onGlobalKeydown(e) {
+    if (e.key !== 'Escape') return;
+    // Close diff popup first (higher z-index)
+    const diffOverlay = document.getElementById('redraft_diff_overlay');
+    if (diffOverlay) { closeDiffPopup(); return; }
+    // Then close popout
+    const popout = document.getElementById('redraft_popout_panel');
+    if (popout && popout.style.display !== 'none') { popout.style.display = 'none'; }
+}
+document.addEventListener('keydown', onGlobalKeydown);
+
 // ─── Helpers ────────────────────────────────────────────────────────
 
 function getSettings() {
@@ -483,6 +495,7 @@ async function redraftMessage(messageIndex) {
 
     // Set re-entrancy guard
     isRefining = true;
+    setPopoutTriggerLoading(true);
 
     // Clean up stale undo/diff buttons from prior refinement of this message
     // (fixes compare showing wrong diff after swiping in auto mode)
@@ -586,6 +599,11 @@ Rules:\n${rulesText}\n\nOriginal message:\n${strippedMessage}`;
         // Re-render the message in the UI
         rerenderMessage(messageIndex);
 
+        // Persist diff data so diff button can be restored on reload
+        if (!chatMetadata['redraft_diffs']) chatMetadata['redraft_diffs'] = {};
+        chatMetadata['redraft_diffs'][messageIndex] = { original: originalText, changelog: changelog || null };
+        await saveMetadata();
+
         // Show undo + diff buttons
         showUndoButton(messageIndex);
         showDiffButton(messageIndex, originalText, refinedText, changelog);
@@ -604,6 +622,7 @@ Rules:\n${rulesText}\n\nOriginal message:\n${strippedMessage}`;
     } finally {
         isRefining = false;
         setMessageButtonLoading(messageIndex, false);
+        setPopoutTriggerLoading(false);
     }
 }
 
@@ -623,6 +642,10 @@ async function undoRedraft(messageIndex) {
 
     chat[messageIndex].mes = originals[messageIndex];
     delete originals[messageIndex];
+
+    // Also clean up persisted diff data
+    const diffs = chatMetadata['redraft_diffs'];
+    if (diffs) delete diffs[messageIndex];
 
     await saveMetadata();
     await saveChat();
@@ -687,6 +710,19 @@ function setMessageButtonLoading(messageIndex, loading) {
     }
 }
 
+function setPopoutTriggerLoading(loading) {
+    const trigger = document.getElementById('redraft_popout_trigger');
+    if (!trigger) return;
+    if (loading) {
+        trigger.classList.add('redraft-refining');
+        trigger.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+    } else {
+        trigger.classList.remove('redraft-refining');
+        trigger.innerHTML = '<i class="fa-solid fa-pen-nib"></i><span class="redraft-auto-dot"></span>';
+        updatePopoutAutoState();
+    }
+}
+
 function showUndoButton(messageIndex) {
     const mesEl = document.querySelector(`.mes[mesid="${messageIndex}"]`);
     if (!mesEl) return;
@@ -699,6 +735,7 @@ function showUndoButton(messageIndex) {
     btn.innerHTML = '<i class="fa-solid fa-rotate-left"></i>';
     btn.addEventListener('click', () => undoRedraft(messageIndex));
 
+    // Insert after the redraft button for consistent order: [refine] [undo] [diff]
     const refineBtn = buttonsRow.querySelector('.redraft-msg-btn');
     if (refineBtn) {
         refineBtn.after(btn);
@@ -724,13 +761,14 @@ function showDiffButton(messageIndex, originalText, refinedText, changelog = nul
     btn.innerHTML = '<i class="fa-solid fa-code-compare"></i>';
     btn.addEventListener('click', () => showDiffPopup(originalText, refinedText, changelog));
 
+    // Insert after undo, or after refine, for consistent order: [refine] [undo] [diff]
     const undoBtn = buttonsRow.querySelector('.redraft-undo-btn');
-    if (undoBtn) {
-        undoBtn.after(btn);
+    const refineBtn2 = buttonsRow.querySelector('.redraft-msg-btn');
+    const anchor = undoBtn || refineBtn2;
+    if (anchor) {
+        anchor.after(btn);
     } else {
-        const refineBtn = buttonsRow.querySelector('.redraft-msg-btn');
-        if (refineBtn) refineBtn.after(btn);
-        else buttonsRow.prepend(btn);
+        buttonsRow.prepend(btn);
     }
 }
 
@@ -835,9 +873,12 @@ function showDiffPopup(original, refined, changelog = null) {
         }
     }
 
-    // Count changes
-    const delCount = diff.filter(s => s.type === 'delete').length;
-    const insCount = diff.filter(s => s.type === 'insert').length;
+    // Count changed words (not segments)
+    const countWords = (segments, type) => segments
+        .filter(s => s.type === type)
+        .reduce((n, s) => n + s.text.trim().split(/\s+/).filter(Boolean).length, 0);
+    const delCount = countWords(diff, 'delete');
+    const insCount = countWords(diff, 'insert');
 
     // Build changelog section if available
     let changelogHtml = '';
@@ -919,6 +960,18 @@ function togglePopout() {
             autoCheckbox.checked = getSettings().autoRefine;
         }
         updatePopoutStatus();
+
+        // Click-outside to close
+        const closeOnOutsideClick = (e) => {
+            if (!panel.contains(e.target) && !e.target.closest('.redraft-popout-trigger')) {
+                panel.style.display = 'none';
+                document.removeEventListener('pointerdown', closeOnOutsideClick, true);
+            }
+        };
+        // Defer so the opening click doesn't immediately close it
+        requestAnimationFrame(() => {
+            document.addEventListener('pointerdown', closeOnOutsideClick, true);
+        });
     }
 }
 
@@ -1031,23 +1084,23 @@ function initDragReorder(container) {
             item.style.opacity = '';
             draggedItem = null;
             container.querySelectorAll('.redraft-custom-rule-item').forEach(el => {
-                el.style.borderTop = '';
+                el.classList.remove('redraft-drag-over');
             });
         });
 
         item.addEventListener('dragover', (e) => {
             e.preventDefault();
             e.dataTransfer.dropEffect = 'move';
-            item.style.borderTop = `2px solid var(--SmartThemeBodyColor)`;
+            item.classList.add('redraft-drag-over');
         });
 
         item.addEventListener('dragleave', () => {
-            item.style.borderTop = '';
+            item.classList.remove('redraft-drag-over');
         });
 
         item.addEventListener('drop', (e) => {
             e.preventDefault();
-            item.style.borderTop = '';
+            item.classList.remove('redraft-drag-over');
             if (!draggedItem || draggedItem === item) return;
 
             const fromIndex = parseInt(draggedItem.dataset.index, 10);
@@ -1442,11 +1495,18 @@ function onCharacterMessageRendered(messageIndex) {
 
 function onMessageRendered() {
     addMessageButtons();
-    const { chatMetadata } = SillyTavern.getContext();
+    const context = SillyTavern.getContext();
+    const { chat, chatMetadata } = context;
     const originals = chatMetadata?.['redraft_originals'];
+    const diffs = chatMetadata?.['redraft_diffs'];
     if (originals) {
         for (const idx of Object.keys(originals)) {
-            showUndoButton(parseInt(idx, 10));
+            const i = parseInt(idx, 10);
+            showUndoButton(i);
+            // Restore diff button if persisted diff data exists
+            if (diffs && diffs[idx] && chat[i]) {
+                showDiffButton(i, diffs[idx].original, chat[i].mes, diffs[idx].changelog);
+            }
         }
     }
 }
@@ -1529,6 +1589,19 @@ function registerSlashCommand() {
         </div>
         <div class="inline-drawer-content">
 
+            <!-- Top-level toggles -->
+            <label class="checkbox_label">
+                <input type="checkbox" id="redraft_enabled" />
+                <span>Enable ReDraft</span>
+            </label>
+            <label class="checkbox_label">
+                <input type="checkbox" id="redraft_auto_refine" />
+                <span>Auto-refine new AI messages</span>
+            </label>
+            <label class="checkbox_label">
+                <input type="checkbox" id="redraft_show_diff" />
+                <span>Show diff after refinement</span>
+            </label>
 
             <!-- Connection Section -->
             <div class="inline-drawer">
@@ -1593,50 +1666,38 @@ function registerSlashCommand() {
                         message.</small>
 
                     <div class="redraft-rules-builtins">
-                        <label class="checkbox_label">
+                        <label class="checkbox_label" title="Fix grammatical errors, spelling mistakes, and awkward phrasing. Preserves intentional dialect, slang, and character-specific speech.">
                             <input type="checkbox" id="redraft_rule_grammar" />
-                            <span>Fix grammar & spelling</span>
+                            <span>Fix grammar &amp; spelling</span>
                         </label>
-                        <label class="checkbox_label">
+                        <label class="checkbox_label" title="Remove sentences where the character restates or paraphrases the user's previous message instead of advancing the scene.">
                             <input type="checkbox" id="redraft_rule_echo" />
-                            <span>Remove echo & restatement</span>
+                            <span>Remove echo &amp; restatement</span>
                         </label>
-                        <label class="checkbox_label">
+                        <label class="checkbox_label" title="Reduce repeated gestures, sentence structures, and emotional beats within the response and compared to the previous one.">
                             <input type="checkbox" id="redraft_rule_repetition" />
                             <span>Reduce repetition</span>
                         </label>
-                        <label class="checkbox_label">
+                        <label class="checkbox_label" title="Ensure each character's dialogue is distinct and consistent with their established speech patterns and personality.">
                             <input type="checkbox" id="redraft_rule_voice" />
                             <span>Maintain character voice</span>
                         </label>
-                        <label class="checkbox_label">
+                        <label class="checkbox_label" title="Fix common AI prose weaknesses: somatic clichés, purple prose, filter words, and telling over showing.">
                             <input type="checkbox" id="redraft_rule_prose" />
                             <span>Clean up prose</span>
                         </label>
-                        <label class="checkbox_label">
+                        <label class="checkbox_label" title="Fix orphaned formatting marks, inconsistent style, and dialogue punctuation errors.">
                             <input type="checkbox" id="redraft_rule_formatting" />
                             <span>Fix formatting</span>
                         </label>
-                        <label class="checkbox_label">
+                        <label class="checkbox_label" title="Remove theatrical 'dismount' endings — crafted landing lines that make the response feel concluded instead of mid-scene.">
                             <input type="checkbox" id="redraft_rule_ending" />
                             <span>Fix crafted endings</span>
                         </label>
-                        <label class="checkbox_label">
+                        <label class="checkbox_label" title="Flag glaring contradictions with established character and world information. Won't invent new lore.">
                             <input type="checkbox" id="redraft_rule_lore" />
                             <span>Maintain lore consistency</span>
                         </label>
-                    </div>
-
-                    <div class="redraft-form-group redraft-pov-group">
-                        <label for="redraft_pov">Point of View</label>
-                        <select id="redraft_pov">
-                            <option value="auto">Auto (no instruction)</option>
-                            <option value="detect">Detect from message</option>
-                            <option value="1st">1st person (I/me)</option>
-                            <option value="1.5">1.5th person (I + you)</option>
-                            <option value="2nd">2nd person (you)</option>
-                            <option value="3rd">3rd person (he/she/they)</option>
-                        </select>
                     </div>
 
                     <hr />
@@ -1673,21 +1734,21 @@ function registerSlashCommand() {
                     <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
                 </div>
                 <div class="inline-drawer-content">
-                    <label class="checkbox_label">
-                        <input type="checkbox" id="redraft_enabled" />
-                        <span>Enable ReDraft</span>
-                    </label>
-                    <label class="checkbox_label">
-                        <input type="checkbox" id="redraft_auto_refine" />
-                        <span>Auto-refine new AI messages</span>
-                    </label>
-                    <label class="checkbox_label">
-                        <input type="checkbox" id="redraft_show_diff" />
-                        <span>Show diff after refinement</span>
-                    </label>
+                    <div class="redraft-form-group redraft-pov-group">
+                        <label for="redraft_pov">Point of View</label>
+                        <select id="redraft_pov">
+                            <option value="auto">Auto (no instruction)</option>
+                            <option value="detect">Detect from message</option>
+                            <option value="1st">1st person (I/me)</option>
+                            <option value="1.5">1.5th person (I + you)</option>
+                            <option value="2nd">2nd person (you)</option>
+                            <option value="3rd">3rd person (he/she/they)</option>
+                        </select>
+                    </div>
                     <div class="redraft-form-group">
                         <label for="redraft_system_prompt">System Prompt Override</label>
-                        <textarea id="redraft_system_prompt" class="text_pole textarea_compact" rows="4"
+                        <textarea id="redraft_system_prompt" class="text_pole textarea_compact" rows="3"
+                            style="resize:vertical;field-sizing:content;max-height:50vh;"
                             placeholder="Leave blank for default refinement prompt..."></textarea>
                     </div>
                 </div>

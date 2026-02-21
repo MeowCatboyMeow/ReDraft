@@ -6,13 +6,25 @@
         </div>
         <div class="inline-drawer-content">
 
-
+            <!-- Top-level toggles -->
+            <label class="checkbox_label">
+                <input type="checkbox" id="redraft_enabled" />
+                <span>Enable ReDraft</span>
+            </label>
+            <label class="checkbox_label">
+                <input type="checkbox" id="redraft_auto_refine" />
+                <span>Auto-refine new AI messages</span>
+            </label>
+            <label class="checkbox_label">
+                <input type="checkbox" id="redraft_show_diff" />
+                <span>Show diff after refinement</span>
+            </label>
 
             <!-- Connection Section -->
             <div class="inline-drawer">
                 <div class="inline-drawer-toggle inline-drawer-header">
-                    <span>Connection</span>
-                    <span id="redraft_status_dot" class="redraft-status-dot" title="Not configured"></span>
+                    <span>Connection <span id="redraft_status_dot" class="redraft-status-dot"
+                            title="Not configured"></span></span>
                     <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
                 </div>
                 <div class="inline-drawer-content">
@@ -72,29 +84,45 @@
                         message.</small>
 
                     <div class="redraft-rules-builtins">
-                        <label class="checkbox_label">
+                        <label class="checkbox_label"
+                            title="Fix grammatical errors, spelling mistakes, and awkward phrasing. Preserves intentional dialect, slang, and character-specific speech.">
                             <input type="checkbox" id="redraft_rule_grammar" />
-                            <span>Fix grammar and spelling</span>
+                            <span>Fix grammar &amp; spelling</span>
                         </label>
-                        <label class="checkbox_label">
+                        <label class="checkbox_label"
+                            title="Remove sentences where the character restates or paraphrases the user's previous message instead of advancing the scene.">
+                            <input type="checkbox" id="redraft_rule_echo" />
+                            <span>Remove echo &amp; restatement</span>
+                        </label>
+                        <label class="checkbox_label"
+                            title="Reduce repeated gestures, sentence structures, and emotional beats within the response and compared to the previous one.">
                             <input type="checkbox" id="redraft_rule_repetition" />
-                            <span>Remove repetition and redundant phrases</span>
+                            <span>Reduce repetition</span>
                         </label>
-                        <label class="checkbox_label">
+                        <label class="checkbox_label"
+                            title="Ensure each character's dialogue is distinct and consistent with their established speech patterns and personality.">
                             <input type="checkbox" id="redraft_rule_voice" />
-                            <span>Maintain character voice and personality</span>
+                            <span>Maintain character voice</span>
                         </label>
-                        <label class="checkbox_label">
+                        <label class="checkbox_label"
+                            title="Fix common AI prose weaknesses: somatic clichés, purple prose, filter words, and telling over showing.">
                             <input type="checkbox" id="redraft_rule_prose" />
-                            <span>Improve prose quality and flow</span>
+                            <span>Clean up prose</span>
                         </label>
-                        <label class="checkbox_label">
+                        <label class="checkbox_label"
+                            title="Fix orphaned formatting marks, inconsistent style, and dialogue punctuation errors.">
                             <input type="checkbox" id="redraft_rule_formatting" />
-                            <span>Fix formatting and punctuation</span>
+                            <span>Fix formatting</span>
                         </label>
-                        <label class="checkbox_label">
+                        <label class="checkbox_label"
+                            title="Remove theatrical 'dismount' endings — crafted landing lines that make the response feel concluded instead of mid-scene.">
+                            <input type="checkbox" id="redraft_rule_ending" />
+                            <span>Fix crafted endings</span>
+                        </label>
+                        <label class="checkbox_label"
+                            title="Flag glaring contradictions with established character and world information. Won't invent new lore.">
                             <input type="checkbox" id="redraft_rule_lore" />
-                            <span>Ensure consistency with established lore</span>
+                            <span>Maintain lore consistency</span>
                         </label>
                     </div>
 
@@ -106,8 +134,19 @@
                                 title="Enable/disable all custom rules" />
                             <small>Custom Rules (ordered by priority)</small>
                         </label>
-                        <div id="redraft_add_rule" class="menu_button" title="Add custom rule">
-                            <i class="fa-solid fa-plus"></i>
+                        <div>
+                            <div id="redraft_import_rules" class="menu_button menu_button_icon"
+                                title="Import rules from JSON">
+                                <i class="fa-solid fa-file-import"></i>
+                            </div>
+                            <input type="file" id="redraft_import_rules_file" accept=".json" hidden />
+                            <div id="redraft_export_rules" class="menu_button menu_button_icon"
+                                title="Export rules to JSON">
+                                <i class="fa-solid fa-file-export"></i>
+                            </div>
+                            <div id="redraft_add_rule" class="menu_button menu_button_icon" title="Add custom rule">
+                                <i class="fa-solid fa-plus"></i>
+                            </div>
                         </div>
                     </div>
 
@@ -124,17 +163,21 @@
                     <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
                 </div>
                 <div class="inline-drawer-content">
-                    <label class="checkbox_label">
-                        <input type="checkbox" id="redraft_enabled" />
-                        <span>Enable ReDraft</span>
-                    </label>
-                    <label class="checkbox_label">
-                        <input type="checkbox" id="redraft_auto_refine" />
-                        <span>Auto-refine new AI messages</span>
-                    </label>
+                    <div class="redraft-form-group redraft-pov-group">
+                        <label for="redraft_pov">Point of View</label>
+                        <select id="redraft_pov">
+                            <option value="auto">Auto (no instruction)</option>
+                            <option value="detect">Detect from message</option>
+                            <option value="1st">1st person (I/me)</option>
+                            <option value="1.5">1.5th person (I + you)</option>
+                            <option value="2nd">2nd person (you)</option>
+                            <option value="3rd">3rd person (he/she/they)</option>
+                        </select>
+                    </div>
                     <div class="redraft-form-group">
                         <label for="redraft_system_prompt">System Prompt Override</label>
-                        <textarea id="redraft_system_prompt" class="text_pole textarea_compact" rows="4"
+                        <textarea id="redraft_system_prompt" class="text_pole textarea_compact" rows="3"
+                            style="resize:vertical;field-sizing:content;max-height:50vh;"
                             placeholder="Leave blank for default refinement prompt..."></textarea>
                     </div>
                 </div>
