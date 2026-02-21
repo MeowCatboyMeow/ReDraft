@@ -223,9 +223,20 @@ function stripProtectedBlocks(text) {
  * Restore protected blocks from placeholders.
  */
 function restoreProtectedBlocks(text, blocks) {
-    return text.replace(/\[PROTECTED_(\d+)\]/g, (_, idx) => {
+    // Replace placeholders that the LLM kept intact
+    let result = text.replace(/\[PROTECTED_(\d+)\]/g, (_, idx) => {
         return blocks[parseInt(idx, 10)] || '';
     });
+
+    // Safety net: if the LLM dropped any placeholders, append the missing content
+    // so protected blocks are never permanently lost
+    for (let i = 0; i < blocks.length; i++) {
+        if (!text.includes(`[PROTECTED_${i}]`)) {
+            result = result + '\n' + blocks[i];
+        }
+    }
+
+    return result;
 }
 
 /**
@@ -238,37 +249,45 @@ function restoreProtectedBlocks(text, blocks) {
  *   3. Fallback — uses entire response as refined text
  */
 function parseChangelog(responseText) {
+    let changelog = null;
+    let refined;
+
     // Priority 1: Look for [REFINED]...[/REFINED] — most reliable
     const refinedMatch = responseText.match(/\[REFINED\]\s*([\s\S]*?)\s*\[\/REFINED\]/i);
     if (refinedMatch) {
-        const refined = refinedMatch[1].trim();
+        refined = refinedMatch[1].trim();
         // Also extract changelog if present
         const changelogMatch = responseText.match(/\[CHANGELOG\]\s*([\s\S]*?)\s*\[\/CHANGELOG\]/i);
-        const changelog = changelogMatch ? changelogMatch[1].trim() : null;
-        return { changelog, refined };
-    }
-
-    // Priority 2: [CHANGELOG]...[/CHANGELOG] — take only text after the block
-    let match = responseText.match(/\[CHANGELOG\]\s*([\s\S]*?)\s*\[\/CHANGELOG\]/i);
-    if (match) {
-        const changelog = match[1].trim();
-        const afterChangelog = responseText.substring(match.index + match[0].length).trim();
-        return { changelog, refined: afterChangelog };
-    }
-
-    // Priority 3: Unclosed [CHANGELOG] tag — split on double-newline
-    match = responseText.match(/\[CHANGELOG\]\s*([\s\S]*?)$/i);
-    if (match) {
-        const remainder = match[1];
-        const splitIdx = remainder.search(/\n\s*\n/);
-        if (splitIdx !== -1) {
-            const changelog = remainder.substring(0, splitIdx).trim();
-            const refined = remainder.substring(splitIdx).trim();
-            return { changelog, refined };
+        changelog = changelogMatch ? changelogMatch[1].trim() : null;
+    } else {
+        // Priority 2: [CHANGELOG]...[/CHANGELOG] — take only text after the block
+        let match = responseText.match(/\[CHANGELOG\]\s*([\s\S]*?)\s*\[\/CHANGELOG\]/i);
+        if (match) {
+            changelog = match[1].trim();
+            refined = responseText.substring(match.index + match[0].length).trim();
+        } else {
+            // Priority 3: Unclosed [CHANGELOG] tag — split on double-newline
+            match = responseText.match(/\[CHANGELOG\]\s*([\s\S]*?)$/i);
+            if (match) {
+                const remainder = match[1];
+                const splitIdx = remainder.search(/\n\s*\n/);
+                if (splitIdx !== -1) {
+                    changelog = remainder.substring(0, splitIdx).trim();
+                    refined = remainder.substring(splitIdx).trim();
+                }
+            }
         }
     }
 
-    return { changelog: null, refined: responseText.trim() };
+    // Fallback
+    if (!refined) {
+        refined = responseText.trim();
+    }
+
+    // Always strip any leftover tag markers from the refined text
+    refined = refined.replace(/\[\/?(?:REFINED|CHANGELOG)\]/gi, '').trim();
+
+    return { changelog, refined };
 }
 
 /**
