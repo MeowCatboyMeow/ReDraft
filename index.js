@@ -198,10 +198,10 @@ function stripProtectedBlocks(text) {
 
     // 2. HTML block-level elements only (not inline formatting like em, span, b, i)
     //    Protects: details, div, table, section, aside, article, nav, pre, fieldset, figure
-    //    Also protects custom elements (tags containing hyphens, e.g. <sim-tracker>)
+    //    Also protects custom/extension elements (tags with hyphens or underscores, e.g. <sim-tracker>, <lumia_ooc>)
     const blockTags = 'details|div|table|section|aside|article|nav|pre|fieldset|figure';
     const blockRegex = new RegExp(
-        `<((?:${blockTags}|\\w+-\\w[\\w-]*))(\\b[^>]*)>[\\s\\S]*?<\\/\\1>`, 'gi'
+        `<((?:${blockTags}|\\w+[-_]\\w[\\w-]*))(\\b[^>]*)>[\\s\\S]*?<\\/\\1>`, 'gi'
     );
     result = result.replace(blockRegex, (match) => {
         blocks.push(match);
